@@ -1,0 +1,65 @@
+# ---------------------------------------------------------------------------
+# Caddy: el UNICO proxy que publica puertos.
+# ---------------------------------------------------------------------------
+# En produccion, solo Caddy publica puertos hacia afuera. PostgreSQL, Redis y
+# los servicios internos no exponen ninguno: quedan en la red privada de
+# Docker. Ver docs/07.
+
+{
+	# Corre en la red interna de Docker. El puerto 80 se publica desde el
+	# compose, no desde aca.
+	admin off
+	auto_https off
+}
+
+:80 {
+	encode gzip zstd
+
+	# Cabeceras de seguridad. Se agregan aca y no en la API para que
+	# apliquen tambien a las pantallas servidas por Nuxt.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "same-origin"
+		# Quitar la tecnologia del navegador deja de anunciar la version de
+		# PHP y de Nuxt.
+		-Server
+	}
+
+	# --- El proxy inverso de la API -------------------------------------
+	handle /api/* {
+		# `reverse_proxy` conserva la cookie y las cabeceras de reenvio. La
+		# cookie de sesion depende de eso.
+		reverse_proxy api:9000
+	}
+
+	# --- La interfaz ----------------------------------------------------
+	handle {
+		reverse_proxy web:3000
+	}
+
+	# El control de salud del proxy. No dice nada de la aplicacion: solo que
+	# Caddy esta vivo.
+	handle /salud-proxy {
+		respond "ok" 200
+	}
+}
+
+# ---------------------------------------------------------------------------
+# Para produccion con dominio real, se descomenta esto y se comenta el bloque
+# de arriba. `auto_https off` se quita y Caddy pide el certificado.
+#
+# vina.ejemplo.cl {
+# 	encode gzip zstd
+# 	handle /api/* {
+# 		reverse_proxy api:9000
+# 	}
+# 	handle {
+# 		reverse_proxy web:3000
+# 	}
+# }
+#
+# OJO: el dominio de arriba es un ejemplo. El de verdad lo define la viña.
+# Ver docs/04.
+# ---------------------------------------------------------------------------

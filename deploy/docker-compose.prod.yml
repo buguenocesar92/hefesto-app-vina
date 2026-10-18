@@ -1,0 +1,177 @@
+# ---------------------------------------------------------------------------
+# Produccion.
+# ---------------------------------------------------------------------------
+#
+# LA REGLA DE LOS PUERTOS, Y NO ES NEGOCIABLE
+# -------------------------------------------
+# El UNICO servicio que publica puertos es `caddy`. PostgreSQL y Redis NO
+# tienen `ports:`: no exponen 5432, 6379 ni ningun otro puerto hacia afuera.
+# Quedan alcanzables solo desde los otros contenedores de esta red.
+#
+# La razon: un puerto publicado es un puerto abierto a internet si el servidor
+# esta expuesto. Con la base de datos a la vista, cualquiera que encuentre el
+# puerto puede intentar conectarse. Ver docs/07.
+
+name: vina
+
+services:
+  # DOS ROLES, Y NO UNO
+# -------------------
+# `POSTGRES_USER` es el rol de ARRANQUE (`vina_admin`): la imagen oficial ejecuta
+# `initdb --username="$POSTGRES_USER"` y ese rol NACE superusuario. Solo se usa
+# para `initdb` y para lo administrativo. La aplicacion NUNCA entra con el.
+#
+# El rol de la aplicacion (`vina_app`) lo crea
+# `deploy/postgres/inicializar-rol.sh` al inicializar el volumen, con
+# NOSUPERUSER y NOBYPASSRLS explicitos, y le da la propiedad de la base para que
+# las migraciones de Laravel puedan crear el esquema.
+#
+# POR QUE IMPORTA: la documentacion de PostgreSQL 18 dice que los superusuarios
+# "always bypass the row security system", y que `FORCE ROW LEVEL SECURITY`
+# sujeta solo al DUENO de la tabla, no al superusuario. Con un solo rol las
+# politicas no se aplicarian y una vina veria los datos de otra. Ver docs/03.
+  postgres:
+    image: postgres:17.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vina
+      POSTGRES_USER: ${DB_ADMIN_USERNAME:-vina_admin}
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:?Hay que definir DB_ADMIN_PASSWORD en el archivo .env}
+      # Rol con el que conecta la aplicacion. Lo crea el script de arranque.
+      APP_DB_ROLE: vina_app
+      APP_DB_PASSWORD: ${DB_PASSWORD:?Hay que definir DB_PASSWORD en el archivo .env}
+    volumes:
+      - datos-postgres:/var/lib/postgresql/data
+      - ./respaldos:/respaldos
+      # Este archivo tiene que existir de verdad: si no, Docker monta uno vacio, el
+      # rol no se crea nunca y la API no se puede conectar.
+      - ./postgres/inicializar-rol.sh:/docker-entrypoint-initdb.d/inicializar-rol.sh:ro
+    # SIN `ports:` a proposito.
+    healthcheck:
+      # Con el rol de la APLICACION: comprueba que la base acepta el rol que de
+      # verdad usa la API, no solo que el proceso vive.
+      test: ["CMD-SHELL", "pg_isready -U vina_app -d vina"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # La base no necesita salir de la red del proyecto para nada.
+    networks:
+      - interna
+
+  redis:
+    image: redis:8.4-alpine
+    restart: unless-stopped
+    environment:
+      # Sin contrasena, Redis acepta cualquier conexion. En produccion
+      # tiene que tener una.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Hay que definir REDIS_PASSWORD en el archivo .env}
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
+    volumes:
+      - datos-redis:/data
+    # SIN `ports:` a proposito.
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - interna
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_NAME: "Viña Hefesto"
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: ${APP_URL:?Hay que definir APP_URL en el archivo .env}
+      APP_WEB_URL: ${APP_WEB_URL:?Hay que definir APP_WEB_URL en el archivo .env}
+
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: vina
+      DB_USERNAME: vina_app
+      DB_PASSWORD: ${DB_PASSWORD}
+
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: database
+      # En produccion la cookie de sesion viaja SOLO por HTTPS. Sin esto, la
+      # cookie se puede leer en cualquier red WiFi de una bodega.
+      SESSION_SECURE_COOKIE: "true"
+
+      AUTHENTIK_ISSUER: ${AUTHENTIK_ISSUER:?Hay que definir AUTHENTIK_ISSUER en el archivo .env}
+      AUTHENTIK_CLIENT_ID: ${AUTHENTIK_CLIENT_ID:?Hay que definir AUTHENTIK_CLIENT_ID en el archivo .env}
+      AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_CLIENT_SECRET:?Hay que definir AUTHENTIK_CLIENT_SECRET en el archivo .env}
+      AUTHENTIK_REDIRECT_URI: ${AUTHENTIK_REDIRECT_URI:?Hay que definir AUTHENTIK_REDIRECT_URI en el archivo .env}
+
+      # NUNCA "true" en produccion. Las migraciones se aplican a mano, una
+      # vez, antes de cambiar de version.
+      VINA_CORRER_MIGRACIONES: "false"
+
+      # No se fija el valor aca: se genera al desplegar y no se versiona.
+      APP_KEY: ${APP_KEY:?Hay que definir APP_KEY en el archivo .env}
+    volumes:
+      # Los registros se guardan en un volumen, no en la imagen: al
+      # reconstruir el contenedor no se pierden.
+      - registros-api:/var/www/html/storage/logs
+    # SIN `ports:` a proposito. Caddy le habla por la red interna.
+    networks:
+      - interna
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NUXT_API_BASE: http://api:9000
+      NUXT_PUBLIC_URL: ${APP_WEB_URL}
+      NUXT_PUBLIC_API_BASE: ${APP_URL}
+    # SIN `ports:` a proposito.
+    networks:
+      - interna
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - web
+    ports:
+      # EL UNICO SERVICIO CON PUERTOS PUBLICADOS.
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - datos-caddy:/data
+      - certificados-caddy:/config
+    networks:
+      - interna
+      - publica
+
+networks:
+  # La red publica es la unica que toca Caddy.
+  publica:
+  # La red interna no tiene puerta a ninguna parte.
+  interna:
+    internal: true
+
+volumes:
+  datos-postgres:
+  datos-redis:
+  datos-caddy:
+  certificados-caddy:
+  registros-api:

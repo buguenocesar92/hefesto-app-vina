@@ -1,0 +1,201 @@
+/* -------------------------------------------------------------------------
+   Estilos base de Vina y Bodega.
+   -------------------------------------------------------------------------
+   Pocas reglas y delgadas: lo que se busca es que la pantalla se lea rapido
+   en un mostrador con luz de tarde, no que parezca una revista.
+
+   Un color que se usa en todas partes es una decision, y por eso son
+   variables: cambiar el tono del vino de fondo no debe ser buscar y
+   reemplazar en quince archivos.
+   ------------------------------------------------------------------------- */
+
+:root {
+  --color-fondo: #fbf9f7;
+  --color-superficie: #ffffff;
+  --color-borde: #e3ded8;
+  --color-texto: #241f1b;
+  --color-texto-suave: #6b625b;
+  --color-acento: #7c1f2e;
+  --color-exito: #1f6b47;
+  --color-advertencia: #9a6412;
+  --color-error: #a02020;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-fondo);
+  color: var(--color-texto);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.25;
+}
+
+/* --- Tablas -------------------------------------------------------------
+   Las listas de lotes y vendimias son tablas de verdad: tienen columnas que
+   se comparan entre filas (fecha, kilos, brix) y una tabla las alinea sin
+   que haya que maquetar cada celda.
+   ---------------------------------------------------------------------- */
+
+.tabla {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--color-superficie);
+  border: 1px solid var(--color-borde);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.tabla th,
+.tabla td {
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--color-borde);
+  font-size: 0.92rem;
+}
+
+.tabla th {
+  background: #f6f2ee;
+  font-weight: 600;
+  color: var(--color-texto-suave);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.tabla tr:last-child td {
+  border-bottom: none;
+}
+
+/* --- Campos ------------------------------------------------------------- */
+
+.campo {
+  display: block;
+  margin-bottom: 1rem;
+}
+
+.campo__etiqueta {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--color-texto-suave);
+}
+
+.campo__control {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--color-borde);
+  border-radius: 0.4rem;
+  background: var(--color-superficie);
+  color: var(--color-texto);
+  font: inherit;
+}
+
+/* --- Botones ------------------------------------------------------------ */
+
+.boton {
+  padding: 0.55rem 1rem;
+  border: 1px solid var(--color-borde);
+  border-radius: 0.4rem;
+  background: var(--color-superficie);
+  color: var(--color-texto);
+  font: inherit;
+  cursor: pointer;
+}
+
+.boton:hover:not(:disabled) {
+  border-color: var(--color-texto-suave);
+}
+
+.boton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.boton--principal {
+  background: var(--color-acento);
+  border-color: var(--color-acento);
+  color: #fff;
+}
+
+.boton--chico {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+/* --- Avisos -------------------------------------------------------------
+   `null` y `0` no se ven igual, y no deben verse igual: uno es "no se
+   midio" y el otro es "se midio y dio cero".
+   ---------------------------------------------------------------------- */
+
+.aviso-sin-dato {
+  color: var(--color-texto-suave);
+  font-style: italic;
+}
+
+.alerta {
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.4rem;
+  margin-bottom: 1rem;
+  border: 1px solid transparent;
+}
+
+.alerta--error {
+  background: #fdecec;
+  border-color: #f2c2c2;
+  color: var(--color-error);
+}
+
+.alerta--exito {
+  background: #e9f5ee;
+  border-color: #bfe0cd;
+  color: var(--color-exito);
+}
+
+/* --- Estados ------------------------------------------------------------ */
+
+.estado {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  background: #f0ece8;
+  color: var(--color-texto-suave);
+}
+
+.estado--embotellado {
+  background: #e9f5ee;
+  color: var(--color-exito);
+}
+
+.estado--descartado {
+  background: #fdecec;
+  color: var(--color-error);
+}
+
+.estado--estabilizado {
+  background: #fdf3e2;
+  color: var(--color-advertencia);
+}
+
+.vacio {
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-texto-suave);
+  background: var(--color-superficie);
+  border: 1px dashed var(--color-borde);
+  border-radius: 0.5rem;
+}

@@ -1,0 +1,22 @@
+# ---------------------------------------------------------------------------
+# Raiz de la aplicacion.
+# ---------------------------------------------------------------------------
+# El archivo `.env` real de produccion nunca se versiona: la plantilla si.
+
+/deploy/.env
+
+# Secretos generados al desplegar.
+/api/.env
+/web/.env
+
+# Respaldos. NUNCA deben quedar en el repositorio: pueden contener datos
+# personales de clientes.
+/deploy/respaldos/*/
+/deploy/respaldos/*.dump
+/deploy/respaldos/*.sql
+
+# Sistema.
+/.DS_Store
+Thumbs.db
+*.swp
+*~

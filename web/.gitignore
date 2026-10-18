@@ -1,0 +1,18 @@
+# ---------------------------------------------------------------------------
+# Dependencias y artefactos de la capa web (Nuxt)
+# ---------------------------------------------------------------------------
+
+/node_modules/
+/.nuxt/
+/.output/
+/.data/
+/dist/
+
+# Cache de herramientas.
+/.cache/
+*.log
+
+# `.env` real nunca se versiona. La plantilla si.
+/.env
+/.env.production
+/.env.local

@@ -1,0 +1,130 @@
+# ---------------------------------------------------------------------------
+# Desarrollo: cada servicio con su puerto publicado.
+# ---------------------------------------------------------------------------
+#
+# ESTO NO ES PRODUCCION.
+# En produccion, el unico que publica puertos es Caddy. Ver
+# `docker-compose.prod.yml`.
+#
+# Aqui los puertos se publican a proposito para poder abrir la API desde el
+# navegador durante el desarrollo: sin abrir el puerto, no hay forma de ver
+# una respuesta de la API con `curl`.
+
+name: vina
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vina
+      # Rol de ARRANQUE: la imagen oficial lo crea superusuario, asi que la
+      # aplicacion nunca entra con el.
+      POSTGRES_USER: ${DB_ADMIN_USERNAME:-vina_admin}
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:-vina_admin_local}
+      # El orden de colaboracion de la base. La clave va al principio porque
+      # es lo mas comun.
+      POSTGRES_INITDB_ARGS: "--locale=C.UTF-8 --encoding=UTF8"
+      # Rol con el que conecta la aplicacion. Lo crea el script de arranque, con
+      # NOSUPERUSER y NOBYPASSRLS explicitos. Tiene la MISMA clave que el
+      # servicio `api` de mas abajo: si se separan, la API no se conecta.
+      APP_DB_ROLE: vina_app
+      APP_DB_PASSWORD: ${DB_PASSWORD:-vina_dev_local}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - datos-postgres:/var/lib/postgresql/data
+      # Este archivo tiene que existir de verdad: si no, Docker monta uno vacio, el
+      # rol no se crea nunca y la API no se puede conectar.
+      - ./postgres/inicializar-rol.sh:/docker-entrypoint-initdb.d/inicializar-rol.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vina_app -d vina"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8.4-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - datos-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_NAME: "Viña Hefesto"
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8000
+      APP_WEB_URL: http://localhost:3000
+
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: vina
+      DB_USERNAME: vina_app
+      # La MISMA clave que usa el script de arranque para crear `vina_app`. Con
+      # contrasena vacia el rol ni siquiera se crearia, y el fallo aparecia al
+      # final, cuando la API ya estaba corriendo y dependia de ese rol.
+      DB_PASSWORD: ${DB_PASSWORD:-vina_dev_local}
+
+      REDIS_HOST: redis
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: database
+      SESSION_SECURE_COOKIE: "false"
+
+      AUTHENTIK_ISSUER: ${AUTHENTIK_ISSUER:-}
+      AUTHENTIK_CLIENT_ID: ${AUTHENTIK_CLIENT_ID:-}
+      AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_CLIENT_SECRET:-}
+      AUTHENTIK_REDIRECT_URI: ${AUTHENTIK_REDIRECT_URI:-http://localhost:8000/api/v1/acceso/callback}
+
+      # En desarrollo si se corren las migraciones al arrancar. En
+      # produccion esto es "false" y se aplican a mano.
+      VINA_CORRER_MIGRACIONES: "true"
+    ports:
+      # Solo en el loopback de la maquina: nadie de la red local llega.
+      - "127.0.0.1:8000:9000"
+    volumes:
+      - ../api:/var/www/html
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      # OJO: el nombre del servicio, NO "localhost". Cada contenedor tiene su
+      # propio localhost.
+      NUXT_API_BASE: http://api:9000
+      NUXT_PUBLIC_URL: http://localhost:3000
+      NUXT_PUBLIC_API_BASE: http://localhost:8000
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      # En desarrollo Nuxt lee los archivos al vuelo, asi que no hace falta
+      # reconstruir la imagen en cada cambio.
+      - ../web:/app
+      - nodos-web:/app/node_modules
+
+volumes:
+  datos-postgres:
+  datos-redis:
+  nodos-web:
