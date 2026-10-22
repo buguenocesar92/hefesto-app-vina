@@ -7,11 +7,36 @@
 
 # La imagen de PHP esta fijada por tag exacto. FALTA fijarla tambien por
 # digest SHA256 antes de produccion (docs/10).
+# =============================================================================
+# CVE-2026-109618 / CVE-2026-109619 (PHP2Shell, 2026-10-22)
+# =============================================================================
+# La imagen se construye con PHP 8.4.27, que es la version PARCHEADA
+# de la serie 8.4. Las versiones parcheadas de PHP son
+# 8.2.35 / 8.3.36 / 8.4.27 / 8.5.12.
+#
+# Verificado el 2026-10-22 en el servidor de desarrollo, con el tag exacto:
+#
+#     $ docker run --rm php:8.4-fpm-alpine php -v
+#     PHP 8.4.27 (cli) (built: Oct 21 2026 22:52:58)
+#
+# El tag `php:8.4-fpm-alpine` es FLOTANTE: no se cambia, se deja constancia.
+# El tag resuelve hoy a PHP 8.4.27, que es la version parcheada de la serie
+# 8.4. Se deja escrito porque un tag flotante puede mudar sin que nadie lo
+# note: la comprobacion va en el candado (api/tests/Unit/), que falla si el
+# tag vuelve a quedar por debajo de la version parcheada.
+#
+# OJO: LA IMAGEN DESPLIEGADA HAY QUE RECONSTRUIRLA. El parche de PHP entra en
+# el contenedor por la IMAGEN, no por este repositorio: mientras no se
+# reconstruya y se redespliegue, el contenedor sigue con el PHP viejo. El
+# endurecimiento de mas abajo (el ini y el pool de php-fpm) es la red de seguridad
+# para ese mientras, y lo que sobrevive a un redeploy.
 FROM php:8.4-fpm-alpine AS base
 
 # `intl` lo necesita la conversion de fechas y de texto; `pdo_pgsql`, la
 # conexion a PostgreSQL. Sin los dos, la aplicacion no arranca.
-RUN apk add --no-cache \
+RUN apk update \
+    && apk upgrade \
+    && apk add --no-cache \
         icu-dev \
         libpq-dev \
         postgresql-dev \
@@ -59,6 +84,12 @@ RUN composer install \
     && rm -rf .bootstrap-cache/
 
 COPY deploy/api/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+# Endurecimiento PHP2Shell (CVE-2026-109618 / CVE-2026-109619):
+# la via CONFIRMADA (session.upload_progress) apagada, y los
+# trabajadores de php-fpm reciclados cada 100 peticiones.
+COPY deploy/api/docker/99-php2shell-hardening.ini /usr/local/etc/php/conf.d/99-php2shell-hardening.ini
+COPY deploy/api/docker/zz-php2shell-fpm.conf /usr/local/etc/php-fpm.d/zz-php2shell-hardening.conf
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 RUN addgroup -g 1000 vina \
